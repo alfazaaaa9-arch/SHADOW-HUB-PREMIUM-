@@ -1,5 +1,5 @@
 -- ============================================================
--- SHADOW HUB PREMIUM - ULTIMATE UI (OPTIMIZED & LAG-FREE RGB EDITION)
+-- SHADOW HUB PREMIUM - ULTIMATE UI (OPTIMIZED LAG-FREE EDITION)
 -- Theme: Black & Dynamic RGB Minimalist Premium
 -- Owner: ITZ_SHADOW7862
 -- ============================================================
@@ -23,13 +23,22 @@ if CoreGui:FindFirstChild("EaterUI") then CoreGui.EaterUI:Destroy() end
 if CoreGui:FindFirstChild("ShadowAutoHealUI") then CoreGui.ShadowAutoHealUI:Destroy() end
 if CoreGui:FindFirstChild("ShadowFastAutoEatUI") then CoreGui.ShadowFastAutoEatUI:Destroy() end
 if CoreGui:FindFirstChild("VoxelKillAura") then CoreGui.VoxelKillAura:Destroy() end
+if CoreGui:FindFirstChild("ShadowHubGuiSystem") then CoreGui.ShadowHubGuiSystem:Destroy() end
+
+-- Cleanup old Dupe Mode connections if any
+if _G.a then
+    for _, v in pairs(_G.a) do
+        v:Disconnect()
+    end
+    _G.a = nil
+end
 
 -- Optimized Dynamic Rainbow RGB Color Generator (Zero lag tick limiter)
 local rgbColor = Color3.new(1, 1, 1)
 local lastUpdate = 0
 RunService.Heartbeat:Connect(function()
     local t = tick()
-    if t - lastUpdate >= 0.03 then
+    if t - lastUpdate >= 0.05 then
         lastUpdate = t
         local hue = (t % 5) / 5
         rgbColor = Color3.fromHSV(hue, 1, 1)
@@ -242,7 +251,8 @@ local function createTab(tabName, layoutOrder)
     TabPage.BackgroundTransparency = 1
     TabPage.BorderSizePixel = 0
     TabPage.Visible = false
-    TabPage.CanvasSize = UDim2.new(0, 0, 3, 0)
+    TabPage.CanvasSize = UDim2.new(0, 0, 0, 0) -- AutomaticCanvasSize use karenge taaki elements hide na ho
+    TabPage.AutomaticCanvasSize = Enum.AutomaticSize.Y
     TabPage.ScrollBarThickness = 3
     TabPage.Parent = ContentArea
 
@@ -269,7 +279,7 @@ end
 -- Create Tabs
 local TabPlayerInfo = createTab("👤 Player Info", 1)
 local TabCombat = createTab("⚔️ Combat", 2)
-local TabAutoEat = createTab("🍗  Auto Fast Eat", 3)
+local TabAutoEat = createTab("🍗 Auto Fast Eat", 3)
 local TabUtility = createTab("🏃 Utilities", 4)
 local TabLinks = createTab("🔗 Links", 5)
 
@@ -399,7 +409,7 @@ BannerCorner.Parent = Banner
 local BannerStroke = Instance.new("UIStroke")
 BannerStroke.Thickness = 1.5
 BannerStroke.Parent = Banner
-RunService.RenderStepped:Connect(function()
+RunService.Heartbeat:Connect(function()
     BannerStroke.Color = rgbColor
 end)
 
@@ -413,20 +423,9 @@ BannerText.Font = Enum.Font.GothamBold
 BannerText.Parent = Banner
 
 -- ============================================================
--- TAB 2: COMBAT (KILL AURA & GOD MODE)
+-- TAB 2: COMBAT
 -- ============================================================
 local godModeEnabled = false
-
-local function nullifyRemote(networkFolder, remoteName)
-    local realRemote = networkFolder:FindFirstChild(remoteName)
-    if realRemote then
-        local dummy = Instance.new("RemoteEvent")
-        dummy.Name = remoteName
-        dummy.Parent = networkFolder
-        realRemote:Destroy()
-    end
-end
-
 RunService.Heartbeat:Connect(function()
     if godModeEnabled then
         local char = LocalPlayer.Character
@@ -461,31 +460,24 @@ local KillAuraManager = {
     cache = {},
     lastScan = 0,
     refresh = function(self)
+        if tick() - self.lastScan < 0.25 then return end
+        self.lastScan = tick()
         local newCache = {}
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
                 local char = player.Character
                 if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
-                    table.insert(newCache, { character = char, hrp = char.HumanoidRootPart, humanoid = char.Humanoid })
-                end
-            end
-        end
-        for _, child in ipairs(Workspace:GetChildren()) do
-            if child:IsA("Model") and child ~= LocalPlayer.Character then
-                local hrp = child:FindFirstChild("HumanoidRootPart")
-                local hum = child:FindFirstChild("Humanoid")
-                if hrp and hum and hum.Health > 0 then
-                    table.insert(newCache, { character = child, hrp = hrp, humanoid = hum })
+                    table.insert(newCache, {character = char, hrp = char.HumanoidRootPart})
                 end
             end
         end
         self.cache = newCache
-        self.lastScan = tick()
     end,
     getNearest = function(self, origin, maxDist)
+        self:refresh()
         local best, bestDist = nil, maxDist * maxDist
         for _, target in ipairs(self.cache) do
-            if target.hrp and target.hrp.Position then
+            if target.hrp then
                 local distSq = (target.hrp.Position - origin).Magnitude ^ 2
                 if distSq < bestDist then
                     bestDist = distSq
@@ -494,70 +486,93 @@ local KillAuraManager = {
             end
         end
         return best
+    end,
+    getAllInRange = function(self, origin, maxDist)
+        self:refresh()
+        local list = {}
+        local maxDistSq = maxDist * maxDist
+        for _, target in ipairs(self.cache) do
+            if target.hrp then
+                local distSq = (target.hrp.Position - origin).Magnitude ^ 2
+                if distSq <= maxDistSq then
+                    table.insert(list, target)
+                end
+            end
+        end
+        return list
     end
 }
 
-local killAuraEnabled = false
-local killAuraConnection = nil
-local lastAuraAttack = 0
-
-local function runKillAuraLoop()
-    if not killAuraEnabled or not KillAuraRemote then return end
-    if tick() - lastAuraAttack < 0.15 then return end
-
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    if tick() - KillAuraManager.lastScan > 0.5 then
-        KillAuraManager:refresh()
-    end
-
-    local target = KillAuraManager:getNearest(hrp.Position, 75)
-    if not target then return end
-
-    pcall(function()
-        if isKillAuraRemoteEvent then
-            KillAuraRemote:FireServer(target.character, 1)
+local function setupKillAura(name, range, damageMultiplier, throttle)
+    local enabled = false
+    local conn = nil
+    local lastAtk = 0
+    createToggle(TabCombat, name, function(state)
+        enabled = state
+        if state then
+            if not conn then
+                conn = RunService.Heartbeat:Connect(function()
+                    if not enabled or not KillAuraRemote then return end
+                    local t = tick()
+                    if t - lastAtk < throttle then return end
+                    lastAtk = t
+                    
+                    local char = LocalPlayer.Character
+                    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+                    
+                    if damageMultiplier == "all" then
+                        for _, target in ipairs(KillAuraManager:getAllInRange(char.HumanoidRootPart.Position, range)) do
+                            task.spawn(function()
+                                pcall(function()
+                                    if isKillAuraRemoteEvent then
+                                        KillAuraRemote:FireServer(target.character, 1)
+                                    else
+                                        KillAuraRemote:InvokeServer(target.character, 1)
+                                    end
+                                end)
+                            end)
+                        end
+                    else
+                        local target = KillAuraManager:getNearest(char.HumanoidRootPart.Position, range)
+                        if target then
+                            task.spawn(function()
+                                pcall(function()
+                                    if isKillAuraRemoteEvent then
+                                        KillAuraRemote:FireServer(target.character, damageMultiplier)
+                                    else
+                                        KillAuraRemote:InvokeServer(target.character, damageMultiplier)
+                                    end
+                                end)
+                            end)
+                        end
+                    end
+                end)
+            end
         else
-            KillAuraRemote:InvokeServer(target.character, 1)
+            if conn then conn:Disconnect() conn = nil end
         end
     end)
-    lastAuraAttack = tick()
 end
 
-createToggle(TabCombat, "⚔️ SHADOW INSTA KILL AURA", function(state)
-    killAuraEnabled = state
-    if state then
-        if not killAuraConnection then
-            killAuraConnection = RunService.Heartbeat:Connect(runKillAuraLoop)
-        end
-        KillAuraManager:refresh()
-    else
-        if killAuraConnection then
-            killAuraConnection:Disconnect()
-            killAuraConnection = nil
-        end
-    end
-    notifyToggle("SHADOW INSTA KILL AURA", state)
-end)
+setupKillAura("⚔️ 1. SHADOW INSTA KILL AURA", 85, 1, 0.25)
+setupKillAura("🌀 2. 360° SPIN KILL AURA", 65, "all", 0.3)
+setupKillAura("🎯 3. SILENT LOCK KILL AURA", 100, 999, 0.25)
+setupKillAura("⚡ 4. HYPER BURST KILL AURA", 70, 1, 0.35)
+setupKillAura("🔥 5. RAGE MELTER AURA", 80, 5, 0.3)
 
 createToggle(TabCombat, "🛡️ GOD MODE & No Fall", function(state)
     godModeEnabled = state
     if state then
         pcall(function()
             local netFolder = ReplicatedStorage:WaitForChild("Systems"):WaitForChild("CombatSystem"):WaitForChild("Network")
-            nullifyRemote(netFolder, "FallDamage")
-            nullifyRemote(netFolder, "DrownDamage")
-            nullifyRemote(netFolder, "EnteredLava")
+            if netFolder:FindFirstChild("FallDamage") then netFolder.FallDamage:Destroy() end
+            if netFolder:FindFirstChild("DrownDamage") then netFolder.DrownDamage:Destroy() end
         end)
     end
-    notifyToggle("GOD MODE", state)
 end)
 
 -- ============================================================
--- TAB 3: AUTO FAST EAT & ALL EAT FEATURES
+-- TAB 3: AUTO FAST EAT
 -- ============================================================
 local function GetConsumeRemote()
     local success, remote = pcall(function()
@@ -621,18 +636,13 @@ local autoEatEnabled = false
 task.spawn(function()
     local slotIndex = 1
     while true do
-        task.wait(0.15)
+        task.wait(0.3)
         if autoEatEnabled and SharedConsume and LocalPlayer.Character then
-            for i = 1, 6 do
-                local currentSlot = slotIndex
-                task.defer(function()
-                    pcall(function()
-                        SharedConsume:InvokeServer(currentSlot)
-                    end)
-                end)
-                slotIndex = slotIndex + 1
-                if slotIndex > 36 then slotIndex = 1 end
-            end
+            pcall(function()
+                SharedConsume:InvokeServer(slotIndex)
+            end)
+            slotIndex = slotIndex + 1
+            if slotIndex > 36 then slotIndex = 1 end
         end
     end
 end)
@@ -643,9 +653,6 @@ end)
 
 -- 2. SHADOW FAST AUTO EAT
 local stateFast = { enabled = false, slotIndex = 1 }
-local SLOTS_FAST = {}
-for i = 1, 36 do table.insert(SLOTS_FAST, i) end
-
 local ScreenGuiFast = Instance.new("ScreenGui")
 ScreenGuiFast.Name = "ShadowFastAutoEatUI"
 ScreenGuiFast.ResetOnSpawn = false
@@ -670,7 +677,6 @@ UIStrokeFast.Color = Color3.fromRGB(150, 0, 255)
 UIStrokeFast.Transparency = 0.2
 UIStrokeFast.Parent = ToggleButtonFast
 
-local renderConnFast = nil
 local function toggleShadowFastEat(state)
     stateFast.enabled = state
     ToggleButtonFast.Visible = state
@@ -678,20 +684,20 @@ local function toggleShadowFastEat(state)
         ToggleButtonFast.BackgroundColor3 = Color3.fromRGB(40, 20, 60)
         ToggleButtonFast.Text = "⚔️"
         ToggleButtonFast.TextColor3 = Color3.fromRGB(50, 255, 50)
-        renderConnFast = RunService.Heartbeat:Connect(function()
-            if not SharedConsume then return end
-            for i = 1, 10 do
-                local slot = SLOTS_FAST[stateFast.slotIndex]
-                pcall(function() SharedConsume:InvokeServer(slot) end)
-                stateFast.slotIndex = stateFast.slotIndex + 1
-                if stateFast.slotIndex > 36 then stateFast.slotIndex = 1 end
+        task.spawn(function()
+            while stateFast.enabled do
+                if SharedConsume then
+                    pcall(function() SharedConsume:InvokeServer(stateFast.slotIndex) end)
+                    stateFast.slotIndex = stateFast.slotIndex + 1
+                    if stateFast.slotIndex > 36 then stateFast.slotIndex = 1 end
+                end
+                task.wait(0.15)
             end
         end)
     else
         ToggleButtonFast.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
         ToggleButtonFast.Text = "⚡"
         ToggleButtonFast.TextColor3 = Color3.fromRGB(255, 50, 50)
-        if renderConnFast then renderConnFast:Disconnect() renderConnFast = nil end
     end
     notifyToggle("SHADOW FAST AUTO EAT", state)
 end
@@ -704,23 +710,18 @@ createToggle(TabAutoEat, "SHADOW FAST AUTO EAT", function(state) toggleShadowFas
 
 -- 3. SHADOW SUPER AUTO EAT
 local superEatEnabled = false
-local superConn = nil
 local superSlot = 1
 local function toggleSuperEat(state)
     superEatEnabled = state
     if state and SharedConsume then
-        superConn = RunService.Heartbeat:Connect(function()
-            for i = 1, 6 do
-                local s = superSlot
-                task.spawn(function()
-                    pcall(function() SharedConsume:InvokeServer(s) end)
-                end)
+        task.spawn(function()
+            while superEatEnabled do
+                pcall(function() SharedConsume:InvokeServer(superSlot) end)
                 superSlot = superSlot + 1
                 if superSlot > 36 then superSlot = 1 end
+                task.wait(0.15)
             end
         end)
-    else
-        if superConn then superConn:Disconnect() superConn = nil end
     end
     notifyToggle("SHADOW SUPER AUTO EAT", state)
 end
@@ -728,7 +729,6 @@ createToggle(TabAutoEat, "SHADOW SUPER AUTO EAT", function(state) toggleSuperEat
 
 -- 4. SHADOW AUTO HEAL PREMIUM
 local autoHealEnabled = false
-local healConn = nil
 local healSlot = 1
 
 local ScreenGuiHeal = Instance.new("ScreenGui")
@@ -780,14 +780,12 @@ local function toggleAutoHeal(state)
         HealStatus.TextColor3 = Color3.fromRGB(100, 255, 100)
         HealStroke.Color = Color3.fromRGB(50, 255, 50)
         
-        healConn = RunService.Heartbeat:Connect(function()
-            for i = 1, 10 do
-                local s = healSlot
-                task.spawn(function()
-                    pcall(function() SharedConsume:InvokeServer(s) end)
-                end)
+        task.spawn(function()
+            while autoHealEnabled do
+                pcall(function() SharedConsume:InvokeServer(healSlot) end)
                 healSlot = healSlot + 1
                 if healSlot > 36 then healSlot = 1 end
+                task.wait(0.2)
             end
         end)
     else
@@ -795,7 +793,6 @@ local function toggleAutoHeal(state)
         HealStatus.Text = "STATUS: [ ⚡ ]"
         HealStatus.TextColor3 = Color3.fromRGB(255, 100, 100)
         HealStroke.Color = Color3.fromRGB(255, 70, 70)
-        if healConn then healConn:Disconnect() healConn = nil end
     end
     notifyToggle("SHADOW AUTO HEAL PREMIUM", state)
 end
@@ -807,8 +804,123 @@ end)
 createToggle(TabAutoEat, "SHADOW AUTO HEAL PREMIUM", function(state) toggleAutoHeal(state) end)
 
 -- ============================================================
--- TAB 4: UTILITIES, SPEED MOD & Z-FLY
+-- TAB 4: UTILITIES, SHADOW DUPE MODE & Z-FLY (FIXED & FULLY VISIBLE)
 -- ============================================================
+
+-- 1. SHADOW DUPE MODE FRAME
+local DupeFrame = Instance.new("Frame")
+DupeFrame.Size = UDim2.new(1, -6, 0, 50)
+DupeFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+DupeFrame.Parent = TabUtility
+Instance.new("UICorner", DupeFrame).CornerRadius = UDim.new(0, 6)
+
+local DupeLabel = Instance.new("TextLabel")
+DupeLabel.Size = UDim2.new(0.6, 0, 1, 0)
+DupeLabel.Position = UDim2.new(0, 8, 0, 0)
+DupeLabel.BackgroundTransparency = 1
+DupeLabel.Text = "🛡️ SHADOW DUPE MODE"
+DupeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+DupeLabel.TextSize = 11
+DupeLabel.Font = Enum.Font.GothamBold
+DupeLabel.TextXAlignment = Enum.TextXAlignment.Left
+DupeLabel.Parent = DupeFrame
+
+local DupeToggleBtn = Instance.new("TextButton")
+DupeToggleBtn.Size = UDim2.new(0, 45, 0, 22)
+DupeToggleBtn.Position = UDim2.new(1, -52, 0.5, -11)
+DupeToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+DupeToggleBtn.Text = "⚡"
+DupeToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+DupeToggleBtn.Font = Enum.Font.GothamBold
+DupeToggleBtn.TextSize = 14
+DupeToggleBtn.Parent = DupeFrame
+Instance.new("UICorner", DupeToggleBtn).CornerRadius = UDim.new(0, 11)
+
+local DupeStroke = Instance.new("UIStroke")
+DupeStroke.Thickness = 1.2
+DupeStroke.Parent = DupeToggleBtn
+RunService.RenderStepped:Connect(function()
+    DupeStroke.Color = rgbColor
+end)
+
+local dupeChar, dupeHumanoid, dupeRootPart
+local isDupeEnabled = false
+local dupeParts = {}
+
+local function updateDupeCharacterData()
+    local c = LocalPlayer.Character
+    if c then
+        dupeChar = c
+        dupeHumanoid = c:FindFirstChildOfClass("Humanoid")
+        dupeRootPart = c:FindFirstChild("HumanoidRootPart")
+        dupeParts = {}
+        for _, v in pairs(c:GetDescendants()) do
+            if v:IsA("BasePart") and v.Transparency == 0 then
+                table.insert(dupeParts, v)
+            end
+        end
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    newChar:WaitForChild("HumanoidRootPart", 5)
+    isDupeEnabled = false
+    DupeToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    DupeToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    DupeToggleBtn.Text = "⚡"
+    task.wait(1)
+    updateDupeCharacterData()
+end)
+
+updateDupeCharacterData()
+
+local function toggleDupeMode()
+    isDupeEnabled = not isDupeEnabled
+    if isDupeEnabled then
+        DupeToggleBtn.BackgroundColor3 = rgbColor
+        DupeToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        DupeToggleBtn.Text = "⚔️"
+    else
+        DupeToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        DupeToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+        DupeToggleBtn.Text = "⚡"
+    end
+    for _, v in pairs(dupeParts) do
+        if v and v.Parent then
+            v.Transparency = isDupeEnabled and 0.5 or 0
+        end
+    end
+    notifyToggle("Shadow Dupe Mode", isDupeEnabled)
+end
+
+DupeToggleBtn.MouseButton1Click:Connect(toggleDupeMode)
+
+local dupeConnections = {}
+pcall(function()
+    dupeConnections[1] = LocalPlayer:GetMouse().KeyDown:Connect(function(key)
+        if key:lower() == "g" then
+            toggleDupeMode()
+        end
+    end)
+end)
+
+dupeConnections[2] = RunService.Heartbeat:Connect(function()
+    if isDupeEnabled and dupeRootPart and dupeHumanoid then
+        local oldCF = dupeRootPart.CFrame
+        local oldOffset = dupeHumanoid.CameraOffset
+        local hideCF = oldCF * CFrame.new(0, -200000, 0)
+        
+        dupeRootPart.CFrame = hideCF
+        dupeHumanoid.CameraOffset = hideCF:ToObjectSpace(CFrame.new(oldCF.Position)).Position
+        RunService.RenderStepped:Wait()
+        dupeRootPart.CFrame = oldCF
+        dupeHumanoid.CameraOffset = oldOffset
+    end
+end)
+
+_G.a = dupeConnections
+
+-- 2. Z-FLY CONTROL FRAME
 local zFlyFlying = false
 local moveForward, moveBackward, moveLeft, moveRight = false, false, false, false
 local zFlyBodyVelocity, zFlyBodyGyro
@@ -911,23 +1023,23 @@ local function toggleZFly()
     zFlyFlying = not zFlyFlying
     remoteFrame.Visible = zFlyFlying
     
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = char.HumanoidRootPart
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    
     if zFlyFlying then
         ZFlyToggleBtn.Text = "Z-FLY: ⚔️"
         ZFlyToggleBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
         
-        local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-        local hrp = char.HumanoidRootPart
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        
         zFlyBodyVelocity = Instance.new("BodyVelocity")
         zFlyBodyVelocity.Velocity = Vector3.zero
-        zFlyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        zFlyBodyVelocity.MaxForce = Vector3.new(400000, 400000, 400000)
         zFlyBodyVelocity.Parent = hrp
         
         zFlyBodyGyro = Instance.new("BodyGyro")
-        zFlyBodyGyro.P = 9e4
-        zFlyBodyGyro.MaxTorque = Vector3.new(9e4, 9e4, 9e4)
+        zFlyBodyGyro.P = 10000
+        zFlyBodyGyro.MaxTorque = Vector3.new(400000, 400000, 400000)
         zFlyBodyGyro.CFrame = hrp.CFrame
         zFlyBodyGyro.Parent = hrp
         
@@ -939,10 +1051,9 @@ local function toggleZFly()
         if zFlyBodyVelocity then zFlyBodyVelocity:Destroy() end
         if zFlyBodyGyro then zFlyBodyGyro:Destroy() end
         
-        local char = LocalPlayer.Character
-        if char then
-            local humanoid = char:FindFirstChildOfClass("Humanoid")
-            if humanoid then humanoid.PlatformStand = false end
+        if humanoid then 
+            humanoid.PlatformStand = false 
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
         end
     end
     notifyToggle("Z-Fly", zFlyFlying)
@@ -952,7 +1063,6 @@ ZFlyToggleBtn.MouseButton1Click:Connect(toggleZFly)
 
 RunService.RenderStepped:Connect(function()
     if zFlyFlying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = LocalPlayer.Character.HumanoidRootPart
         local camera = workspace.CurrentCamera
         local moveDir = Vector3.zero
         
@@ -970,7 +1080,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 1. SPEED MODIFIER
+-- 3. SPEED MODIFIER
 local speedEnabled = false
 local targetSpeed = 50
 
@@ -1083,7 +1193,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 2. NOCLIP
+-- 4. NOCLIP
 local noclipEnabled = false
 RunService.Stepped:Connect(function()
     if noclipEnabled and LocalPlayer.Character then
@@ -1100,7 +1210,7 @@ createToggle(TabUtility, "Noclip", function(state)
     notifyToggle("Noclip", state)
 end)
 
--- 3. PLAYER ESP
+-- 5. PLAYER ESP
 local espEnabled = false
 local function addESP(player)
     if player == LocalPlayer then return end
@@ -1176,7 +1286,7 @@ Players.PlayerAdded:Connect(function(p)
     end
 end)
 
--- 4. INFINITE JUMP
+-- 6. INFINITE JUMP
 local infJumpEnabled = false
 UserInputService.JumpRequest:Connect(function()
     if infJumpEnabled and LocalPlayer.Character then
@@ -1192,7 +1302,7 @@ createToggle(TabUtility, "Infinite Jump", function(state)
     notifyToggle("Infinite Jump", state)
 end)
 
--- 5. TELEPORT TO LAST DEATH POSITION
+-- 7. TELEPORT TO LAST DEATH POSITION
 local TpDeathBtn = Instance.new("TextButton")
 TpDeathBtn.Size = UDim2.new(1, -6, 0, 32)
 TpDeathBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -1219,7 +1329,7 @@ TpDeathBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 6. TELEPORT TO OTHER PLAYERS
+-- 8. TELEPORT TO OTHER PLAYERS
 local TpPlayerFrame = Instance.new("Frame")
 TpPlayerFrame.Size = UDim2.new(1, -6, 0, 65)
 TpPlayerFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -1255,7 +1365,7 @@ TpExecuteBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 TpExecuteBtn.Text = "🚀 TP To Player"
 TpExecuteBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
 TpExecuteBtn.Font = Enum.Font.GothamBold
-TpExecuteBtn.TextSize = 10
+TpExecuteBtn.TextSize5 = 10
 TpExecuteBtn.Parent = TpPlayerFrame
 Instance.new("UICorner", TpExecuteBtn).CornerRadius = UDim.new(0, 4)
 
@@ -1326,4 +1436,4 @@ end
 createLinkButton(TabLinks, "▶️ Copy YouTube Link", "https://www.youtube.com/@shadowandsasukeplayz")
 createLinkButton(TabLinks, "💬 Copy Discord Server Link", "https://discord.gg/RDTduRUfc")
 
-print("✅ [SHADOW HUB PREMIUM] Optimized Compact RGB Edition Loaded Successfully!")
+print("✅ [SHADOW HUB PREMIUM] Fully Fixed & Optimized Edition Loaded Successfully!")
