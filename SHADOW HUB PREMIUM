@@ -68,7 +68,7 @@ local function sendChatNotification(msg)
     end)
 end
 
-sendChatNotification("WELCOME SHADOW HUB PREMIUM WARRIOR IS HERE")
+sendChatNotification("SHADOW WARRIOR IS THERE 👑SHADOW HUB V2 By ITZ_SHADOW Activated")
 
 local function notifyToggle(featureName, state)
     local stateText = state and "ACTIVATED" or "DEACTIVATED"
@@ -426,7 +426,7 @@ BannerText.Font = Enum.Font.GothamBold
 BannerText.Parent = Banner
 
 -- ============================================================
--- TAB 2: COMBAT
+-- TAB 2: COMBAT (FIXED REMOTE FINDING & ENEMY HIT LOGIC)
 -- ============================================================
 local function findRemoteKA1()
     local possiblePaths = {
@@ -442,11 +442,12 @@ local function findRemoteKA1()
             return remote
         end
     end
+    -- Deep search fallback for any attack/combat/damage/hit remote
     local function deepScan(folder)
         for _, child in ipairs(folder:GetChildren()) do
             if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
                 local name = child.Name:lower()
-                if name:find("attack") or name:find("combat") or name:find("damage") or name:find("hit") then
+                if name:find("attack") or name:find("combat") or name:find("damage") or name:find("hit") or name:find("swing") then
                     return child
                 end
             end
@@ -457,7 +458,7 @@ local function findRemoteKA1()
         end
         return nil
     end
-    return deepScan(ReplicatedStorage)
+    return deepScan(ReplicatedStorage) or deepScan(Workspace)
 end
 
 local RemoteKA1 = findRemoteKA1()
@@ -468,6 +469,7 @@ local EntityManagerKA1 = {
     lastScan = 0,
     refresh = function(self)
         local newCache = {}
+        -- Scan Players
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
                 local char = player.Character
@@ -476,12 +478,16 @@ local EntityManagerKA1 = {
                 end
             end
         end
+        -- Scan Workspace Mobs / Dummies / Enemies
         for _, child in ipairs(Workspace:GetChildren()) do
             if child:IsA("Model") and child ~= LocalPlayer.Character then
-                local hrp = child:FindFirstChild("HumanoidRootPart")
-                local hum = child:FindFirstChild("Humanoid")
+                local hrp = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso") or child:FindFirstChild("UpperTorso")
+                local hum = child:FindFirstChildOfClass("Humanoid")
                 if hrp and hum and hum.Health > 0 then
-                    table.insert(newCache, { character = child, hrp = hrp, humanoid = hum })
+                    -- Exclude local player model if nested
+                    if not Players:GetPlayerFromCharacter(child) or Players:GetPlayerFromCharacter(child) ~= LocalPlayer then
+                        table.insert(newCache, { character = child, hrp = hrp, humanoid = hum })
+                    end
                 end
             end
         end
@@ -506,6 +512,27 @@ local EntityManagerKA1 = {
         return best
     end
 }
+
+local function fireAttack(targetChar)
+    if not RemoteKA1 then
+        -- Re-try finding remote if missing
+        RemoteKA1 = findRemoteKA1()
+        isRemoteEventKA1 = RemoteKA1 and RemoteKA1:IsA("RemoteEvent")
+        if not RemoteKA1 then return end
+    end
+    
+    pcall(function()
+        if isRemoteEventKA1 then
+            -- Try common argument patterns for attack remotes
+            RemoteKA1:FireServer(targetChar)
+            RemoteKA1:FireServer(targetChar, 1)
+            RemoteKA1:FireServer(targetChar, targetChar:FindFirstChild("HumanoidRootPart"))
+        else
+            RemoteKA1:InvokeServer(targetChar)
+            RemoteKA1:InvokeServer(targetChar, 1)
+        end
+    end)
+end
 
 local function createCombatToggle(name, callback)
     local Frame = Instance.new("Frame")
@@ -561,16 +588,10 @@ local function attackLoopKA1()
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     EntityManagerKA1:refresh()
     local target = EntityManagerKA1:getNearest(char.HumanoidRootPart.Position, 35)
-    if not target or not RemoteKA1 then return end
-    for i = 1, 4 do
+    if not target then return end
+    for i = 1, 3 do
         task.spawn(function()
-            pcall(function()
-                if isRemoteEventKA1 then
-                    RemoteKA1:FireServer(target.character, 1)
-                else
-                    RemoteKA1:InvokeServer(target.character, 1)
-                end
-            end)
+            fireAttack(target.character)
         end)
     end
 end
@@ -596,16 +617,10 @@ local function attackLoopX()
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     EntityManagerKA1:refresh()
     local target = EntityManagerKA1:getNearest(char.HumanoidRootPart.Position, 60)
-    if not target or not RemoteKA1 then return end
-    for i = 1, 8 do
+    if not target then return end
+    for i = 1, 5 do
         task.spawn(function()
-            pcall(function()
-                if isRemoteEventKA1 then
-                    RemoteKA1:FireServer(target.character, 1)
-                else
-                    RemoteKA1:InvokeServer(target.character, 1)
-                end
-            end)
+            fireAttack(target.character)
         end)
     end
 end
@@ -631,16 +646,10 @@ local function attackLoopUltra()
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     EntityManagerKA1:refresh()
     local target = EntityManagerKA1:getNearest(char.HumanoidRootPart.Position, 75)
-    if target and RemoteKA1 then
-        for i = 1, 15 do
+    if target then
+        for i = 1, 8 do
             task.spawn(function()
-                pcall(function()
-                    if isRemoteEventKA1 then
-                        RemoteKA1:FireServer(target.character, 1)
-                    else
-                        RemoteKA1:InvokeServer(target.character, 1)
-                    end
-                end)
+                fireAttack(target.character)
             end)
         end
     end
@@ -689,19 +698,11 @@ local function attackLoopTriple()
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     EntityManagerKA1:refresh()
     local targets = getMultipleNearest(char.HumanoidRootPart.Position, 85, 5)
-    if #targets > 0 and RemoteKA1 then
-        for i = 1, 20 do
-            for _, t in ipairs(targets) do
-                task.spawn(function()
-                    pcall(function()
-                        if isRemoteEventKA1 then
-                            RemoteKA1:FireServer(t.character, 1)
-                        else
-                            RemoteKA1:InvokeServer(t.character, 1)
-                        end
-                    end)
-                end)
-            end
+    if #targets > 0 then
+        for _, t in ipairs(targets) do
+            task.spawn(function()
+                fireAttack(t.character)
+            end)
         end
     end
 end
@@ -720,28 +721,152 @@ createCombatToggle("👑 GOD Multi-Aura (Range 85)", function(state)
 end)
 
 -- ============================================================
--- TAB 3: AUTO FAST EAT & AUTO HEAL (INTERACTIVE TOGGLES)
+-- TAB 3: AUTO FAST EAT & AUTO HEAL (INTEGRATED INTERACTIVE UI)
 -- ============================================================
-local shadowGodModEnv = nil
-local shadowAutoHealEnv = nil
+local Consume = ReplicatedStorage:FindFirstChild("Systems")
+    and ReplicatedStorage.Systems:FindFirstChild("ActionsSystem")
+    and ReplicatedStorage.Systems.ActionsSystem:FindFirstChild("Network")
+    and ReplicatedStorage.Systems.ActionsSystem.Network:FindFirstChild("Consume")
 
-createToggle(TabAutoEat, "🍗 Shadow Hyper God Mod (Auto Fast Eat)", function(state)
-    if state then
-        pcall(function()
-            shadowGodModEnv = loadstring(game:HttpGet("https://pastebin.com/raw/EGe6PQYx"))()
+local EatConfig = {
+    EatsPerFrame = 6,
+    MaxSlot = 36,
+}
+
+local isAutoEatToggled = false
+local autoEatConnection = nil
+local totalEaten = 0
+local speedTimer = 0
+local speedCounter = 0
+local slotIndex = 1
+
+local function ResetEat()
+    slotIndex = 1
+end
+
+-- Auto Eat UI container inside TabAutoEat
+local EatMainFrame = Instance.new("Frame")
+EatMainFrame.Size = UDim2.new(1, -6, 0, 110)
+EatMainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+EatMainFrame.Parent = TabAutoEat
+Instance.new("UICorner", EatMainFrame).CornerRadius = UDim.new(0, 6)
+
+local EatTitleLabel = Instance.new("TextLabel")
+EatTitleLabel.Size = UDim2.new(1, -16, 0, 25)
+EatTitleLabel.Position = UDim2.new(0, 8, 0, 6)
+EatTitleLabel.BackgroundTransparency = 1
+EatTitleLabel.Text = "🍗 AUTO FAST EAT V10"
+EatTitleLabel.TextColor3 = Color3.fromRGB(0, 220, 220)
+EatTitleLabel.TextSize = 12
+EatTitleLabel.Font = Enum.Font.GothamBold
+EatTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+EatTitleLabel.Parent = EatMainFrame
+
+local EatStatusLabel = Instance.new("TextLabel")
+EatStatusLabel.Size = UDim2.new(1, -16, 0, 20)
+EatStatusLabel.Position = UDim2.new(0, 8, 0, 32)
+EatStatusLabel.BackgroundTransparency = 1
+EatStatusLabel.Text = "Status: READY (Slot 1/36)"
+EatStatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+EatStatusLabel.TextSize = 10
+EatStatusLabel.Font = Enum.Font.GothamMedium
+EatStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+EatStatusLabel.Parent = EatMainFrame
+
+local EatSpeedLabel = Instance.new("TextLabel")
+EatSpeedLabel.Size = UDim2.new(1, -16, 0, 20)
+EatSpeedLabel.Position = UDim2.new(0, 8, 0, 52)
+EatSpeedLabel.BackgroundTransparency = 1
+EatSpeedLabel.Text = "Speed: ⚡ 0/s"
+EatSpeedLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+EatSpeedLabel.TextSize = 10
+EatSpeedLabel.Font = Enum.Font.GothamMedium
+EatSpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+EatSpeedLabel.Parent = EatMainFrame
+
+local EatToggleBtn = Instance.new("TextButton")
+EatToggleBtn.Size = UDim2.new(1, -16, 0, 26)
+EatToggleBtn.Position = UDim2.new(0, 8, 0, 76)
+EatToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+EatToggleBtn.Text = "AUTO EAT: OFF"
+EatToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+EatToggleBtn.Font = Enum.Font.GothamBold
+EatToggleBtn.TextSize = 11
+EatToggleBtn.Parent = EatMainFrame
+Instance.new("UICorner", EatToggleBtn).CornerRadius = UDim.new(0, 4)
+
+local function OptimizedEat()
+    if not Consume then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum or hum.Health <= 0 then
+        ResetEat()
+        return
+    end
+
+    for i = 1, EatConfig.EatsPerFrame do
+        local slot = slotIndex
+        task.spawn(function()
+            pcall(function()
+                Consume:InvokeServer(slot)
+            end)
         end)
-        sendChatNotification("SHADOW HUB: Shadow Hyper God Mod Activated!")
+        totalEaten = totalEaten + 1
+        speedCounter = speedCounter + 1
+        slotIndex = slotIndex + 1
+        if slotIndex > EatConfig.MaxSlot then
+            slotIndex = 1
+        end
+    end
+
+    EatStatusLabel.Text = "Status: ACTIVE (Slot " .. slotIndex .. "/36)"
+
+    speedTimer = speedTimer + 1
+    if speedTimer >= 30 then
+        EatSpeedLabel.Text = "Speed: ⚡ " .. (speedCounter * 2) .. "/s"
+        speedCounter = 0
+        speedTimer = 0
+    end
+end
+
+EatToggleBtn.MouseButton1Click:Connect(function()
+    isAutoEatToggled = not isAutoEatToggled
+    if isAutoEatToggled then
+        EatToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+        EatToggleBtn.Text = "AUTO EAT: ON"
+        ResetEat()
+        speedCounter = 0
+        speedTimer = 0
+        if autoEatConnection then autoEatConnection:Disconnect() end
+        autoEatConnection = RunService.Heartbeat:Connect(OptimizedEat)
+        sendChatNotification("SHADOW HUB: Auto Fast Eat Activated!")
     else
-        pcall(function()
-            -- Agar script ke andar koi global variable/cleanup function ho to yahan handle karein
-            if type(shadowGodModEnv) == "table" and shadowGodModEnv.Disable then
-                shadowGodModEnv.Disable()
-            end
-        end)
-        sendChatNotification("SHADOW HUB: Shadow Hyper God Mod Deactivated!")
+        EatToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+        EatToggleBtn.Text = "AUTO EAT: OFF"
+        if autoEatConnection then
+            autoEatConnection:Disconnect()
+            autoEatConnection = nil
+        end
+        ResetEat()
+        EatStatusLabel.Text = "Status: READY (Slot 1/36)"
+        EatSpeedLabel.Text = "Speed: ⚡ 0/s"
+        sendChatNotification("SHADOW HUB: Auto Fast Eat Deactivated!")
     end
 end)
 
+-- Hotkey K to toggle Auto Eat, R to reset
+UserInputService.InputBegan:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+    if Input.KeyCode == Enum.KeyCode.K then
+        EatToggleBtn:CaptureFocus() -- optional
+    elseif Input.KeyCode == Enum.KeyCode.R then
+        ResetEat()
+    end
+end)
+
+-- Shadow Auto Heal Toggle in Tab 3
+local shadowAutoHealEnv = nil
 createToggle(TabAutoEat, "❤️ Shadow Auto Heal", function(state)
     if state then
         pcall(function()
@@ -1372,4 +1497,4 @@ end
 createLinkButton(TabLinks, "▶️ Copy YouTube Link", "https://www.youtube.com/@shadowandsasukeplayz")
 createLinkButton(TabLinks, "💬 Copy Discord Server Link", "https://discord.gg/RDTduRUfc")
 
-print("✅ [SHADOW HUB PREMIUM] Tab 3 Auto Eat Section Successfully Converted to Interactive Toggles!")
+print("✅ [SHADOW HUB PREMIUM] Combat Remotes & Tab 3 Auto Eat Successfully Updated & Fixed!")
