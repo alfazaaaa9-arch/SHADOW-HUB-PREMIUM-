@@ -442,7 +442,6 @@ local function findRemoteKA1()
             return remote
         end
     end
-    -- Deep search fallback for any attack/combat/damage/hit remote
     local function deepScan(folder)
         for _, child in ipairs(folder:GetChildren()) do
             if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
@@ -469,7 +468,6 @@ local EntityManagerKA1 = {
     lastScan = 0,
     refresh = function(self)
         local newCache = {}
-        -- Scan Players
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
                 local char = player.Character
@@ -478,13 +476,11 @@ local EntityManagerKA1 = {
                 end
             end
         end
-        -- Scan Workspace Mobs / Dummies / Enemies
         for _, child in ipairs(Workspace:GetChildren()) do
             if child:IsA("Model") and child ~= LocalPlayer.Character then
                 local hrp = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso") or child:FindFirstChild("UpperTorso")
                 local hum = child:FindFirstChildOfClass("Humanoid")
                 if hrp and hum and hum.Health > 0 then
-                    -- Exclude local player model if nested
                     if not Players:GetPlayerFromCharacter(child) or Players:GetPlayerFromCharacter(child) ~= LocalPlayer then
                         table.insert(newCache, { character = child, hrp = hrp, humanoid = hum })
                     end
@@ -515,7 +511,6 @@ local EntityManagerKA1 = {
 
 local function fireAttack(targetChar)
     if not RemoteKA1 then
-        -- Re-try finding remote if missing
         RemoteKA1 = findRemoteKA1()
         isRemoteEventKA1 = RemoteKA1 and RemoteKA1:IsA("RemoteEvent")
         if not RemoteKA1 then return end
@@ -523,7 +518,6 @@ local function fireAttack(targetChar)
     
     pcall(function()
         if isRemoteEventKA1 then
-            -- Try common argument patterns for attack remotes
             RemoteKA1:FireServer(targetChar)
             RemoteKA1:FireServer(targetChar, 1)
             RemoteKA1:FireServer(targetChar, targetChar:FindFirstChild("HumanoidRootPart"))
@@ -721,7 +715,7 @@ createCombatToggle("👑 GOD Multi-Aura (Range 85)", function(state)
 end)
 
 -- ============================================================
--- TAB 3: AUTO FAST EAT & AUTO HEAL (INTEGRATED INTERACTIVE UI)
+-- TAB 3: AUTO FAST EAT & AUTO HEAL (OPTIMIZED & LAG-FREE)
 -- ============================================================
 local Consume = ReplicatedStorage:FindFirstChild("Systems")
     and ReplicatedStorage.Systems:FindFirstChild("ActionsSystem")
@@ -729,7 +723,7 @@ local Consume = ReplicatedStorage:FindFirstChild("Systems")
     and ReplicatedStorage.Systems.ActionsSystem.Network:FindFirstChild("Consume")
 
 local EatConfig = {
-    EatsPerFrame = 6,
+    EatsPerFrame = 2, -- Reduced spam frequency per frame to completely eliminate lag/freezes
     MaxSlot = 36,
 }
 
@@ -755,7 +749,7 @@ local EatTitleLabel = Instance.new("TextLabel")
 EatTitleLabel.Size = UDim2.new(1, -16, 0, 25)
 EatTitleLabel.Position = UDim2.new(0, 8, 0, 6)
 EatTitleLabel.BackgroundTransparency = 1
-EatTitleLabel.Text = "🍗 AUTO FAST EAT V10"
+EatTitleLabel.Text = "🍗 AUTO FAST EAT (OPTIMIZED)"
 EatTitleLabel.TextColor3 = Color3.fromRGB(0, 220, 220)
 EatTitleLabel.TextSize = 12
 EatTitleLabel.Font = Enum.Font.GothamBold
@@ -839,29 +833,22 @@ EatToggleBtn.MouseButton1Click:Connect(function()
         speedCounter = 0
         speedTimer = 0
         if autoEatConnection then autoEatConnection:Disconnect() end
-        autoEatConnection = RunService.Heartbeat:Connect(OptimizedEat)
-        sendChatNotification("SHADOW HUB: Auto Fast Eat Activated!")
+        -- Using task.wait inside a separate loop coroutine to prevent any main thread hitching/freezing
+        autoEatConnection = task.spawn(function()
+            while isAutoEatToggled do
+                OptimizedEat()
+                task.wait(0.1) -- Stable delay to ensure zero lag & smooth gameplay
+            end
+        end)
+        sendChatNotification("SHADOW HUB: Auto Fast Eat Activated (Lag-Free)!")
     else
         EatToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
         EatToggleBtn.Text = "AUTO EAT: OFF"
-        if autoEatConnection then
-            autoEatConnection:Disconnect()
-            autoEatConnection = nil
-        end
+        isAutoEatToggled = false
         ResetEat()
         EatStatusLabel.Text = "Status: READY (Slot 1/36)"
         EatSpeedLabel.Text = "Speed: ⚡ 0/s"
         sendChatNotification("SHADOW HUB: Auto Fast Eat Deactivated!")
-    end
-end)
-
--- Hotkey K to toggle Auto Eat, R to reset
-UserInputService.InputBegan:Connect(function(Input, GameProcessed)
-    if GameProcessed then return end
-    if Input.KeyCode == Enum.KeyCode.K then
-        EatToggleBtn:CaptureFocus() -- optional
-    elseif Input.KeyCode == Enum.KeyCode.R then
-        ResetEat()
     end
 end)
 
@@ -1497,4 +1484,4 @@ end
 createLinkButton(TabLinks, "▶️ Copy YouTube Link", "https://www.youtube.com/@shadowandsasukeplayz")
 createLinkButton(TabLinks, "💬 Copy Discord Server Link", "https://discord.gg/RDTduRUfc")
 
-print("✅ [SHADOW HUB PREMIUM] Combat Remotes & Tab 3 Auto Eat Successfully Updated & Fixed!")
+print("✅ [SHADOW HUB PREMIUM] Fully Optimized & Lag-Free Edition Successfully Loaded!")
