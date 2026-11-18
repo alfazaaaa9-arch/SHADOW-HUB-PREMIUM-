@@ -426,8 +426,36 @@ BannerText.Font = Enum.Font.GothamBold
 BannerText.Parent = Banner
 
 -- ============================================================
--- TAB 2: COMBAT (FIXED REMOTE FINDING & ENEMY HIT LOGIC)
+-- TAB 2: COMBAT (ULTIMATE WHITELIST & FULL POWER)
 -- ============================================================
+
+local WhitelistNames = {
+    ["itz_shadow7862"] = true,
+    ["prince1286099"] = true,
+}
+
+local function isWhitelisted(targetChar)
+    if not targetChar then return false end
+    
+    -- 1. Check if it belongs to a Player
+    local player = Players:GetPlayerFromCharacter(targetChar)
+    if player then
+        local nameLower = player.Name:lower()
+        local dispLower = player.DisplayName:lower()
+        if WhitelistNames[nameLower] or WhitelistNames[dispLower] then
+            return true
+        end
+    end
+    
+    -- 2. Check directly by Model/Character name
+    local charNameLower = targetChar.Name:lower()
+    if WhitelistNames[charNameLower] then
+        return true
+    end
+    
+    return false
+end
+
 local function findRemoteKA1()
     local possiblePaths = {
         ReplicatedStorage:FindFirstChild("Systems") and ReplicatedStorage.Systems:FindFirstChild("ActionsSystem") and ReplicatedStorage.Systems.ActionsSystem.Network:FindFirstChild("Attack"),
@@ -468,21 +496,28 @@ local EntityManagerKA1 = {
     lastScan = 0,
     refresh = function(self)
         local newCache = {}
+        -- Players Scan (Skip Whitelisted)
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
                 local char = player.Character
                 if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
-                    table.insert(newCache, { character = char, hrp = char.HumanoidRootPart, humanoid = char.Humanoid })
+                    if not isWhitelisted(char) then
+                        table.insert(newCache, { character = char, hrp = char.HumanoidRootPart, humanoid = char.Humanoid })
+                    end
                 end
             end
         end
+        -- Workspace NPCs / Models Scan (Skip Whitelisted)
         for _, child in ipairs(Workspace:GetChildren()) do
             if child:IsA("Model") and child ~= LocalPlayer.Character then
                 local hrp = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso") or child:FindFirstChild("UpperTorso")
                 local hum = child:FindFirstChildOfClass("Humanoid")
                 if hrp and hum and hum.Health > 0 then
-                    if not Players:GetPlayerFromCharacter(child) or Players:GetPlayerFromCharacter(child) ~= LocalPlayer then
-                        table.insert(newCache, { character = child, hrp = hrp, humanoid = hum })
+                    local plr = Players:GetPlayerFromCharacter(child)
+                    if not plr or plr ~= LocalPlayer then
+                        if not isWhitelisted(child) then
+                            table.insert(newCache, { character = child, hrp = hrp, humanoid = hum })
+                        end
                     end
                 end
             end
@@ -494,14 +529,16 @@ local EntityManagerKA1 = {
         local best = nil
         local bestDist = maxDist * maxDist
         for _, target in ipairs(self.cache) do
-            if target.hrp and target.hrp.Position then
-                local dx = target.hrp.Position.X - origin.X
-                local dy = target.hrp.Position.Y - origin.Y
-                local dz = target.hrp.Position.Z - origin.Z
-                local distSq = dx*dx + dy*dy + dz*dz
-                if distSq < bestDist then
-                    bestDist = distSq
-                    best = target
+            if target.character and not isWhitelisted(target.character) then
+                if target.hrp and target.hrp.Position then
+                    local dx = target.hrp.Position.X - origin.X
+                    local dy = target.hrp.Position.Y - origin.Y
+                    local dz = target.hrp.Position.Z - origin.Z
+                    local distSq = dx*dx + dy*dy + dz*dz
+                    if distSq < bestDist then
+                        bestDist = distSq
+                        best = target
+                    end
                 end
             end
         end
@@ -510,6 +547,9 @@ local EntityManagerKA1 = {
 }
 
 local function fireAttack(targetChar)
+    -- Absolute final barrier: If target is whitelisted, immediately abort!
+    if not targetChar or isWhitelisted(targetChar) then return end
+
     if not RemoteKA1 then
         RemoteKA1 = findRemoteKA1()
         isRemoteEventKA1 = RemoteKA1 and RemoteKA1:IsA("RemoteEvent")
@@ -673,7 +713,7 @@ local function getMultipleNearest(origin, maxDist, count)
             for _, ex in ipairs(targets) do
                 if ex == target then skip = true; break end
             end
-            if not skip and target.hrp and target.humanoid and target.humanoid.Health > 0 then
+            if not skip and target.character and not isWhitelisted(target.character) and target.hrp and target.humanoid and target.humanoid.Health > 0 then
                 local pos = target.hrp.Position
                 local distSq = (pos.X - origin.X)^2 + (pos.Y - origin.Y)^2 + (pos.Z - origin.Z)^2
                 if distSq < bestDist then
@@ -723,7 +763,7 @@ local Consume = ReplicatedStorage:FindFirstChild("Systems")
     and ReplicatedStorage.Systems.ActionsSystem.Network:FindFirstChild("Consume")
 
 local EatConfig = {
-    EatsPerFrame = 2, -- Reduced spam frequency per frame to completely eliminate lag/freezes
+    EatsPerFrame = 2,
     MaxSlot = 36,
 }
 
@@ -738,7 +778,6 @@ local function ResetEat()
     slotIndex = 1
 end
 
--- Auto Eat UI container inside TabAutoEat
 local EatMainFrame = Instance.new("Frame")
 EatMainFrame.Size = UDim2.new(1, -6, 0, 110)
 EatMainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -833,11 +872,10 @@ EatToggleBtn.MouseButton1Click:Connect(function()
         speedCounter = 0
         speedTimer = 0
         if autoEatConnection then autoEatConnection:Disconnect() end
-        -- Using task.wait inside a separate loop coroutine to prevent any main thread hitching/freezing
         autoEatConnection = task.spawn(function()
             while isAutoEatToggled do
                 OptimizedEat()
-                task.wait(0.1) -- Stable delay to ensure zero lag & smooth gameplay
+                task.wait(0.1)
             end
         end)
         sendChatNotification("SHADOW HUB: Auto Fast Eat Activated (Lag-Free)!")
@@ -852,7 +890,6 @@ EatToggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Shadow Auto Heal Toggle in Tab 3
 local shadowAutoHealEnv = nil
 createToggle(TabAutoEat, "❤️ Shadow Auto Heal", function(state)
     if state then
@@ -873,7 +910,6 @@ end)
 -- ============================================================
 -- TAB 4: UTILITIES
 -- ============================================================
--- 1. SHADOW DUPE MODE
 local DupeFrame = Instance.new("Frame")
 DupeFrame.Size = UDim2.new(1, -6, 0, 50)
 DupeFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -976,7 +1012,7 @@ dupeConnections[2] = RunService.Heartbeat:Connect(function()
 end)
 _G.a = dupeConnections
 
--- 2. Z-FLY CONTROL
+-- Z-Fly Control
 local zFlyFlying = false
 local moveForward, moveBackward, moveLeft, moveRight = false, false, false, false
 local zFlyBodyVelocity, zFlyBodyGyro
@@ -1112,7 +1148,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 3. SPEED MODIFIER
+-- Speed Modifier
 local speedEnabled = false
 local targetSpeed = 50
 local SpeedFrame = Instance.new("Frame")
@@ -1213,7 +1249,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 4. NOCLIP
+-- Noclip
 local noclipEnabled = false
 RunService.Stepped:Connect(function()
     if noclipEnabled and LocalPlayer.Character then
@@ -1229,7 +1265,7 @@ createToggle(TabUtility, "Noclip", function(state)
     notifyToggle("Noclip", state)
 end)
 
--- 5. NO FALL DAMAGE & GOD MODE
+-- God Mode & No Fall Damage
 local godModeEnabled = false
 local godModeConnection = nil
 createToggle(TabUtility, "🛡️ No Fall Damage & God Mode", function(state)
@@ -1265,7 +1301,7 @@ createToggle(TabUtility, "🛡️ No Fall Damage & God Mode", function(state)
     end
 end)
 
--- 6. PLAYER ESP
+-- Player ESP
 local espEnabled = false
 local function addESP(player)
     if player == LocalPlayer then return end
@@ -1323,7 +1359,7 @@ createToggle(TabUtility, "Player ESP (Shows HP)", function(state)
     end
 end)
 
--- 7. INFINITE JUMP
+-- Infinite Jump
 local infJumpEnabled = false
 UserInputService.JumpRequest:Connect(function()
     if infJumpEnabled and LocalPlayer.Character then
@@ -1336,7 +1372,7 @@ createToggle(TabUtility, "Infinite Jump", function(state)
     notifyToggle("Infinite Jump", state)
 end)
 
--- 8. TP TO LAST DEATH POSITION
+-- TP to Last Death Position
 local TpDeathBtn = Instance.new("TextButton")
 TpDeathBtn.Size = UDim2.new(1, -6, 0, 32)
 TpDeathBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -1356,7 +1392,7 @@ TpDeathBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 9. TP TO OTHER PLAYERS
+-- TP to Other Players
 local TpPlayerFrame = Instance.new("Frame")
 TpPlayerFrame.Size = UDim2.new(1, -6, 0, 65)
 TpPlayerFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -1483,5 +1519,6 @@ end
 
 createLinkButton(TabLinks, "▶️ Copy YouTube Link", "https://www.youtube.com/@shadowandsasukeplayz")
 createLinkButton(TabLinks, "💬 Copy Discord Server Link", "https://discord.gg/RDTduRUfc")
+createLinkButton(TabLinks, "💬 Copy WhatsApp Group Link", "https://chat.whatsapp.com/EtPc8A0GsMbIxpJH17asE2?s=sh&p=a&iam=2")
 
 print("✅ [SHADOW HUB PREMIUM] Fully Optimized & Lag-Free Edition Successfully Loaded!")
